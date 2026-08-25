@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from datetime import date, timedelta
+from collections import defaultdict
+from io import BytesIO
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.models.user import User
@@ -54,6 +57,8 @@ async def list_reclamations(
     statut: str | None = None,
     id_type: int | None = None,
     search: str | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN", "SAISIE", "INSTRUCTEUR", "CHEF", "DIRECTEUR")),
 ):
@@ -77,6 +82,12 @@ async def list_reclamations(
         )
         query = query.where(filtre)
         count_query = count_query.where(filtre)
+    if date_debut:
+        query = query.where(Reclamation.date_depot >= date_debut)
+        count_query = count_query.where(Reclamation.date_depot >= date_debut)
+    if date_fin:
+        query = query.where(Reclamation.date_depot <= date_fin)
+        count_query = count_query.where(Reclamation.date_depot <= date_fin)
 
     total_result = await db.execute(count_query)
     total = total_result.scalar()
@@ -135,6 +146,205 @@ async def create_reclamation(
     await db.flush()
 
     return ReclamationRead.model_validate(reclamation)
+
+
+TERMINAUX = ["CLOTUREE", "REJETEE", "NOTIFIEE"]
+
+
+@router.get("/stats")
+async def stats_reclamations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN", "CHEF", "DIRECTEUR", "INSTRUCTEUR")),
+):
+    today = date.today()
+    six_mois = (today.replace(day=1) - timedelta(days=150)).replace(day=1)
+
+    total = await db.scalar(select(func.count(Reclamation.id))) or 0
+
+    rows_statut = await db.execute(
+        select(Reclamation.statut, func.count(Reclamation.id)).group_by(Reclamation.statut)
+    )
+    par_statut = {str(r[0].value if hasattr(r[0], 'value') else r[0]): r[1] for r in rows_statut}
+
+    rows_type = await db.execute(
+        select(TypeReclamation.libelle, func.count(Reclamation.id))
+        .outerjoin(Reclamation, Reclamation.id_type == TypeReclamation.id)
+        .group_by(TypeReclamation.libelle)
+    )
+    par_type = [{"libelle": r[0], "total": r[1]} for r in rows_type]
+
+    rows_canal = await db.execute(
+        select(Reclamation.canal_entree, func.count(Reclamation.id))
+        .group_by(Reclamation.canal_entree)
+    )
+    par_canal = {str(r[0].value if hasattr(r[0], 'value') else r[0]): r[1] for r in rows_canal}
+
+    rows_mois = await db.execute(
+        select(
+            func.to_char(Reclamation.date_depot, 'YYYY-MM').label('mois'),
+            func.count(Reclamation.id),
+        )
+        .where(Reclamation.date_depot >= six_mois)
+        .group_by('mois')
+        .order_by('mois')
+    )
+    par_mois = [{"mois": r[0], "total": r[1]} for r in rows_mois]
+
+    en_retard = await db.scalar(
+        select(func.count(Reclamation.id)).where(
+            Reclamation.statut.not_in(TERMINAUX),
+            Reclamation.date_limite_reponse < today,
+        )
+    ) or 0
+
+    en_cours = await db.scalar(
+        select(func.count(Reclamation.id)).where(
+            Reclamation.statut.not_in(TERMINAUX),
+        )
+    ) or 0
+
+    cloturees_rows = await db.execute(
+        select(Reclamation.date_depot).where(Reclamation.statut.in_(["CLOTUREE", "NOTIFIEE"]))
+    )
+    delais = [(today - r[0]).days for r in cloturees_rows if r[0]]
+    delai_moyen = round(sum(delais) / len(delais), 1) if delais else 0
+
+    rows_agent = await db.execute(
+        select(
+            User.nom,
+            User.id,
+            func.count(Reclamation.id).label('traitees'),
+        )
+        .outerjoin(Reclamation, Reclamation.id_agent_createur == User.id)
+        .group_by(User.id, User.nom)
+        .having(func.count(Reclamation.id) > 0)
+    )
+    par_agent = [{"nom": r[0], "traitees": r[2]} for r in rows_agent]
+
+    return {
+        "total": total,
+        "en_cours": en_cours,
+        "en_retard": en_retard,
+        "delai_moyen_jours": delai_moyen,
+        "par_statut": par_statut,
+        "par_type": par_type,
+        "par_canal": par_canal,
+        "par_mois": par_mois,
+        "par_agent": par_agent,
+    }
+
+
+@router.get("/export")
+async def export_reclamations(
+    format: str = Query("xlsx", regex="^(xlsx|csv)$"),
+    statut: str | None = None,
+    id_type: int | None = None,
+    date_debut: date | None = None,
+    date_fin: date | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN", "CHEF", "DIRECTEUR", "INSTRUCTEUR")),
+):
+    query = select(Reclamation).options(
+        selectinload(Reclamation.contribuable),
+        selectinload(Reclamation.type),
+    )
+    if statut:
+        query = query.where(Reclamation.statut == statut)
+    if id_type:
+        query = query.where(Reclamation.id_type == id_type)
+    if date_debut:
+        query = query.where(Reclamation.date_depot >= date_debut)
+    if date_fin:
+        query = query.where(Reclamation.date_depot <= date_fin)
+    query = query.order_by(Reclamation.created_at.desc())
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    STATUT_FR = {
+        "ENREGISTREE": "Enregistree",
+        "A_QUALIFIER": "A qualifier",
+        "EN_INSTRUCTION": "En instruction",
+        "EN_ATTENTE_PIECES": "En attente pieces",
+        "PROJET_REPONSE": "Projet reponse",
+        "EN_VALIDATION": "En validation",
+        "EN_VISA_DIRECTEUR": "Visa directeur",
+        "SIGNEE": "Signee",
+        "NOTIFIEE": "Notifiee",
+        "CLOTUREE": "Cloturee",
+        "REJETEE": "Rejetee",
+        "CONTENTIEUX_JUDICIAIRE": "Contentieux judiciaire",
+    }
+
+    def _row(r):
+        s = str(r.statut.value if hasattr(r.statut, 'value') else r.statut)
+        return [
+            r.numero_dossier,
+            r.contribuable.nom_raison_sociale if r.contribuable else '',
+            r.type.libelle if r.type else '',
+            s,
+            str(r.date_depot) if r.date_depot else '',
+            str(r.date_limite_reponse) if r.date_limite_reponse else '',
+            STATUT_FR.get(s, s),
+            f"{r.montant_concerne:,.0f} DA" if r.montant_concerne else '',
+            r.reference_imposition or '',
+            r.canal_entree.value if hasattr(r.canal_entree, 'value') else str(r.canal_entree),
+        ]
+
+    header = [
+        "Numero dossier", "Contribuable", "Type", "Statut", "Date depot",
+        "Date limite", "Statut FR", "Montant", "Ref imposition", "Canal",
+    ]
+
+    if format == "csv":
+        import csv
+        buf = BytesIO()
+        import io
+        writer = csv.writer(io.TextIOWrapper(buf, encoding="utf-8", newline=""), delimiter=";")
+        writer.writerow(header)
+        for r in rows:
+            writer.writerow(_row(r))
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=reclamations_{today}.csv"},
+        )
+
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Reclamations"
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1a5319", fill_type="solid")
+    thin = Side(style="thin", color="CCCCCC")
+    border = Border(top=thin, bottom=thin, left=thin, right=thin)
+
+    for col, label in enumerate(header, 1):
+        cell = ws.cell(row=1, column=col, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = border
+
+    for i, r in enumerate(rows, 2):
+        for j, val in enumerate(_row(r), 1):
+            cell = ws.cell(row=i, column=j, value=val)
+            cell.border = border
+
+    for col in range(1, len(header) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 18
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=reclamations_{today}.xlsx"},
+    )
 
 
 @router.get("/{reclamation_id}/historique", response_model=list[ActionHistoriqueRead])
