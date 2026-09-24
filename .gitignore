@@ -22,7 +22,11 @@ backend/.env
 .DS_Store
 Thumbs.db
 
-# Uploads / logs locaux
+# Couverture / logs locaux
 *.log
+.coverage
+.coverage.*
+htmlcov/
+backend/.coverage
 uploads/
 backend/uploads/
