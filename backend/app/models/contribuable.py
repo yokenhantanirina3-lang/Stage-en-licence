@@ -32,3 +32,4 @@ class Contribuable(Base):
     reclamations: Mapped[list["Reclamation"]] = relationship(
         back_populates="contribuable"
     )
+    visites: Mapped[list["Visite"]] = relationship(back_populates="contribuable")

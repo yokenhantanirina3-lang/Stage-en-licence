@@ -83,3 +83,4 @@ class User(Base):
     decisions_signees: Mapped[list["Decision"]] = relationship(
         foreign_keys="Decision.id_signataire", back_populates="signataire"
     )
+    visites: Mapped[list["Visite"]] = relationship(back_populates="agent_recepteur")

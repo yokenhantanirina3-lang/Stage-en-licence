@@ -50,6 +50,7 @@ class CategoriePieceEnum(str, enum.Enum):
 class TypeActionEnum(str, enum.Enum):
     CREATION = "CREATION"
     QUALIFICATION = "QUALIFICATION"
+    AFFECTATION = "AFFECTATION"
     DEMANDE_PIECES = "DEMANDE_PIECES"
     RECEPTION_PIECES = "RECEPTION_PIECES"
     REDACTION = "REDACTION"
@@ -147,6 +148,9 @@ class Reclamation(Base):
     )
     id_agent_createur: Mapped[int | None] = mapped_column(
         ForeignKey("utilisateurs.id"), nullable=True
+    )
+    code_suivi: Mapped[str | None] = mapped_column(
+        String(20), unique=True, index=True, nullable=True
     )
     pdf_accuse_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

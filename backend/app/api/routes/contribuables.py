@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.models.user import User
@@ -8,6 +8,10 @@ from app.models.contribuable import Contribuable
 from app.schemas.contribuable import ContribuableCreate, ContribuableRead, ContribuableUpdate
 
 router = APIRouter()
+
+
+def generer_numero_fiscal(annee: int, index: int) -> str:
+    return f"NF-{annee}-{index:06d}"
 
 
 @router.get("/", response_model=list[ContribuableRead])
@@ -35,13 +39,27 @@ async def create_contribuable(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN", "SAISIE")),
 ):
-    existing = await db.execute(
-        select(Contribuable).where(Contribuable.numero_fiscal == data.numero_fiscal)
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Numero fiscal deja utilise")
+    payload = data.model_dump()
 
-    contribuable = Contribuable(**data.model_dump())
+    if not payload.get("numero_fiscal"):
+        from datetime import datetime
+        annee = datetime.utcnow().year
+        count = await db.scalar(select(func.count()).select_from(Contribuable))
+        numero = generer_numero_fiscal(annee, (count or 0) + 1)
+        while await db.scalar(
+            select(Contribuable.id).where(Contribuable.numero_fiscal == numero)
+        ):
+            count = (count or 0) + 1
+            numero = generer_numero_fiscal(annee, count + 1)
+        payload["numero_fiscal"] = numero
+    else:
+        existing = await db.execute(
+            select(Contribuable).where(Contribuable.numero_fiscal == payload["numero_fiscal"])
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Numero fiscal deja utilise")
+
+    contribuable = Contribuable(**payload)
     db.add(contribuable)
     await db.flush()
     return ContribuableRead.model_validate(contribuable)

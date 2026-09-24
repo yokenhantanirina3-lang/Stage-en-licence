@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import hashlib
@@ -119,6 +120,17 @@ async def download_piece(
     piece = result.scalar_one_or_none()
     if not piece:
         raise HTTPException(status_code=404, detail="Piece jointe introuvable")
+
+    if piece.chemin_stockage.startswith("local:"):
+        filename = piece.chemin_stockage.split(":", 1)[1]
+        filepath = minio_service.get_local_file(filename)
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail="Fichier absent du disque")
+        return FileResponse(
+            path=str(filepath),
+            filename=piece.nom_fichier,
+            media_type=piece.type_mime,
+        )
 
     url = minio_service.presigned_download(piece.chemin_stockage)
     return {"url": url}

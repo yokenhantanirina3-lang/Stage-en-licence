@@ -35,7 +35,9 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
+    SMTP_STARTTLS: bool = True
     EMAIL_FROM: str = "noreply@fiscal.local"
+    EMAIL_SUJET_PREFIXE: str = "[Fiscal]"
 
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
 

@@ -1,7 +1,9 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
 from typing import Optional
 from decimal import Decimal
+
+from app.schemas.validators import verifier_texte_sans_speciaux, verifier_montant_positif
 
 
 class TypeReclamationRead(BaseModel):
@@ -33,12 +35,36 @@ class ReclamationCreate(BaseModel):
     montant_concerne: Optional[Decimal] = None
     reference_imposition: Optional[str] = None
 
+    @field_validator("resume_faits", "reference_imposition")
+    @classmethod
+    def _texte_sans_speciaux(cls, v):
+        if v is None:
+            return v
+        return verifier_texte_sans_speciaux(v, "Le champ")
+
+    @field_validator("montant_concerne")
+    @classmethod
+    def _montant(cls, v):
+        return verifier_montant_positif(v, "Le montant concerne")
+
 
 class ReclamationUpdate(BaseModel):
     id_type: Optional[int] = None
     id_motif: Optional[int] = None
     resume_faits: Optional[str] = None
     montant_concerne: Optional[Decimal] = None
+
+    @field_validator("resume_faits")
+    @classmethod
+    def _texte_sans_speciaux(cls, v):
+        if v is None:
+            return v
+        return verifier_texte_sans_speciaux(v, "Le champ")
+
+    @field_validator("montant_concerne")
+    @classmethod
+    def _montant(cls, v):
+        return verifier_montant_positif(v, "Le montant concerne")
 
 
 class QualifierReclamation(BaseModel):
@@ -49,6 +75,23 @@ class QualifierReclamation(BaseModel):
 class DemanderPieces(BaseModel):
     motif: str
     liste_pieces: list[str]
+
+
+class AffectationAssign(BaseModel):
+    id_agent: int
+    role: str = Field("INSTRUCTEUR", pattern="^(INSTRUCTEUR|VALIDATEUR|SIGNATAIRE|OBSERVATEUR)$")
+
+
+class AffectationRead(BaseModel):
+    id: int
+    id_agent: int
+    nom_agent: Optional[str] = None
+    role_dossier: str
+    date_debut: date
+    date_fin: Optional[date] = None
+    actif: bool
+
+    model_config = {"from_attributes": True}
 
 
 class SoumettreValidation(BaseModel):
@@ -95,6 +138,16 @@ class DecisionCreate(BaseModel):
     montant_accorde: Decimal = Decimal("0")
     montant_rejete: Decimal = Decimal("0")
 
+    @field_validator("fondement_juridique", "motivation")
+    @classmethod
+    def _texte_sans_speciaux(cls, v):
+        return verifier_texte_sans_speciaux(v, "Le champ")
+
+    @field_validator("montant_accorde", "montant_rejete")
+    @classmethod
+    def _montants(cls, v):
+        return verifier_montant_positif(v, "Le montant")
+
 
 class DecisionRead(BaseModel):
     id: int
@@ -118,6 +171,18 @@ class DecisionUpdate(BaseModel):
     montant_accorde: Optional[Decimal] = None
     montant_rejete: Optional[Decimal] = None
 
+    @field_validator("fondement_juridique", "motivation")
+    @classmethod
+    def _texte_sans_speciaux(cls, v):
+        if v is None:
+            return v
+        return verifier_texte_sans_speciaux(v, "Le champ")
+
+    @field_validator("montant_accorde", "montant_rejete")
+    @classmethod
+    def _montants(cls, v):
+        return verifier_montant_positif(v, "Le montant")
+
 
 class ReclamationRead(BaseModel):
     id: int
@@ -132,6 +197,8 @@ class ReclamationRead(BaseModel):
     resume_faits: Optional[str] = None
     montant_concerne: Optional[Decimal] = None
     reference_imposition: Optional[str] = None
+    code_suivi: Optional[str] = None
+    pdf_accuse_path: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -4,9 +4,17 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.api.router import api_router
 
+from app.tasks.echeances import _check_echeances_async
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"Demarrage de {settings.PROJECT_NAME}...")
+    try:
+        resultat = await _check_echeances_async()
+        print(f"[Echeances] {resultat}")
+    except Exception as exc:
+        print(f"[Echeances] Verification au demarrage impossible: {exc}")
     yield
     print("Arret propre...")
 

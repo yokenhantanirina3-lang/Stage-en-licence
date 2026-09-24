@@ -25,3 +25,4 @@ Thumbs.db
 # Uploads / logs locaux
 *.log
 uploads/
+backend/uploads/

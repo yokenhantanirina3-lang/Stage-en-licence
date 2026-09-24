@@ -2,50 +2,66 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '@/features/auth/api'
 import { useAuth } from '@/features/auth/useAuth'
-import { Plus, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Filter, FileSpreadsheet, FileText as FileIcon, BarChart3 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { filtrerTexte } from '@/lib/validation'
+import { SkeletonTable } from '@/components/Skeleton'
+import PageHero from '@/components/PageHero'
+import Pagination from '@/components/Pagination'
+import EmptyState from '@/components/EmptyState'
 
 const STATUTS = [
   { value: '', label: 'Tous les statuts' },
-  { value: 'ENREGISTREE', label: 'Enregistree' },
-  { value: 'A_QUALIFIER', label: 'A qualifier' },
+  { value: 'ENREGISTREE', label: 'Enregistrée' },
+  { value: 'A_QUALIFIER', label: 'À qualifier' },
   { value: 'EN_INSTRUCTION', label: 'En instruction' },
-  { value: 'EN_ATTENTE_PIECES', label: 'En attente pieces' },
-  { value: 'PROJET_REPONSE', label: 'Projet reponse' },
+  { value: 'EN_ATTENTE_PIECES', label: 'En attente pièces' },
+  { value: 'PROJET_REPONSE', label: 'Projet réponse' },
   { value: 'EN_VALIDATION', label: 'En validation' },
   { value: 'EN_VISA_DIRECTEUR', label: 'Visa directeur' },
-  { value: 'SIGNEE', label: 'Signee' },
-  { value: 'NOTIFIEE', label: 'Notifiee' },
-  { value: 'CLOTUREE', label: 'Cloturee' },
-  { value: 'REJETEE', label: 'Rejetee' },
+  { value: 'SIGNEE', label: 'Signée' },
+  { value: 'NOTIFIEE', label: 'Notifiée' },
+  { value: 'CLOTUREE', label: 'Clôturée' },
+  { value: 'REJETEE', label: 'Rejetée' },
 ]
 
-const STATUT_COLORS: Record<string, string> = {
-  ENREGISTREE: 'bg-gray-100 text-gray-800',
-  A_QUALIFIER: 'bg-orange-100 text-orange-800',
-  EN_INSTRUCTION: 'bg-blue-100 text-blue-800',
-  EN_ATTENTE_PIECES: 'bg-yellow-100 text-yellow-800',
-  PROJET_REPONSE: 'bg-indigo-100 text-indigo-800',
-  EN_VALIDATION: 'bg-cyan-100 text-cyan-800',
-  EN_VISA_DIRECTEUR: 'bg-teal-100 text-teal-800',
-  SIGNEE: 'bg-lime-100 text-lime-800',
-  NOTIFIEE: 'bg-purple-100 text-purple-800',
-  CLOTUREE: 'bg-green-100 text-green-800',
-  REJETEE: 'bg-red-100 text-red-800',
+const STATUT_STYLE: Record<string, { bg: string; dot: string; text: string }> = {
+  ENREGISTREE:    { bg: 'bg-slate-50',     dot: 'bg-slate-400',     text: 'text-slate-700' },
+  A_QUALIFIER:    { bg: 'bg-amber-50',     dot: 'bg-amber-400',     text: 'text-amber-700' },
+  EN_INSTRUCTION: { bg: 'bg-brand-50',     dot: 'bg-brand-400',     text: 'text-brand-700' },
+  EN_ATTENTE_PIECES: { bg: 'bg-amber-100', dot: 'bg-amber-500',    text: 'text-amber-800' },
+  PROJET_REPONSE: { bg: 'bg-brand-100',    dot: 'bg-brand-500',     text: 'text-brand-800' },
+  EN_VALIDATION:  { bg: 'bg-emerald-50',   dot: 'bg-emerald-400',   text: 'text-emerald-700' },
+  EN_VISA_DIRECTEUR: { bg: 'bg-brand-100', dot: 'bg-brand-600',     text: 'text-brand-800' },
+  SIGNEE:         { bg: 'bg-emerald-100',  dot: 'bg-emerald-500',   text: 'text-emerald-800' },
+  NOTIFIEE:       { bg: 'bg-emerald-50',   dot: 'bg-emerald-400',   text: 'text-emerald-700' },
+  CLOTUREE:       { bg: 'bg-emerald-50',   dot: 'bg-emerald-400',   text: 'text-emerald-700' },
+  REJETEE:        { bg: 'bg-amber-100',    dot: 'bg-amber-600',     text: 'text-amber-900' },
 }
 
 const STATUT_FR: Record<string, string> = {
-  ENREGISTREE: 'Enregistree',
-  A_QUALIFIER: 'A qualifier',
+  ENREGISTREE: 'Enregistrée',
+  A_QUALIFIER: 'À qualifier',
   EN_INSTRUCTION: 'En instruction',
-  EN_ATTENTE_PIECES: 'En attente pieces',
-  PROJET_REPONSE: 'Projet reponse',
+  EN_ATTENTE_PIECES: 'En attente pièces',
+  PROJET_REPONSE: 'Projet réponse',
   EN_VALIDATION: 'En validation',
   EN_VISA_DIRECTEUR: 'Visa directeur',
-  SIGNEE: 'Signee',
-  NOTIFIEE: 'Notifiee',
-  CLOTUREE: 'Cloturee',
-  REJETEE: 'Rejetee',
+  SIGNEE: 'Signée',
+  NOTIFIEE: 'Notifiée',
+  CLOTUREE: 'Clôturée',
+  REJETEE: 'Rejetée',
+}
+
+function BadgeStatut({ statut }: { statut: string }) {
+  const s = STATUT_STYLE[statut]
+  if (!s) return <span className="badge bg-surface-100 text-surface-600 border border-surface-200/60">{statut}</span>
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${s.bg} ${s.text} border border-transparent`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {STATUT_FR[statut] || statut}
+    </span>
+  )
 }
 
 export default function ListeReclamations() {
@@ -101,84 +117,131 @@ export default function ListeReclamations() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Reclamations</h1>
-        <div className="flex items-center gap-2">
-          <button onClick={() => handleExport('xlsx')} className="flex items-center gap-2 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm">
-            <Download size={14} />
-            Excel
-          </button>
-          <button onClick={() => handleExport('csv')} className="flex items-center gap-2 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors text-sm">
-            <Download size={14} />
-            CSV
-          </button>
-          {peutCreer && (
-            <Link to="/reclamations/nouvelle" className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium">
-              <Plus size={16} />
-              Nouvelle
-            </Link>
-          )}
-        </div>
-      </div>
+    <div className="space-y-6">
+      {/* Hero Header */}
+      <PageHero
+        kicker="Gestion des réclamations"
+        icon={<BarChart3 size={16} className="text-brand-200" />}
+        title="Réclamations"
+        subtitle={`${data?.total || 0} résultat${(data?.total || 0) > 1 ? 's' : ''}`}
+        actions={
+          <>
+            <button onClick={() => handleExport('xlsx')} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 backdrop-blur-sm text-white rounded-xl font-medium text-sm border border-white/20 hover:bg-white/20 transition-all duration-200">
+              <FileSpreadsheet size={15} />
+              Excel
+            </button>
+            <button onClick={() => handleExport('csv')} className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 backdrop-blur-sm text-white rounded-xl font-medium text-sm border border-white/20 hover:bg-white/20 transition-all duration-200">
+              <FileIcon size={15} />
+              CSV
+            </button>
+            {peutCreer && (
+              <Link to="/app/reclamations/nouvelle" className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-brand-700 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200">
+                <Plus size={16} />
+                Nouvelle
+              </Link>
+            )}
+          </>
+        }
+      />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
-        <div className="p-4 space-y-3">
+      {/* Filters */}
+      <div className="card p-5" style={{ animation: 'slideUp 0.5s ease-out 0.1s backwards' }}>
+        <div className="space-y-3">
           <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-surface-400" />
             <input
               type="text"
-              placeholder="Rechercher par numero ou reference..."
+              placeholder="Rechercher par numéro ou référence..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
+              onChange={(e) => setSearch(filtrerTexte(e.target.value))}
+              className="input pl-11"
             />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <select value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none">
-              {STATUTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-            <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none">
+            <div className="relative">
+              <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 pointer-events-none" />
+              <select value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)} className="select pl-9 pr-8">
+                {STATUTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+            <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} className="select">
               <option value="">Tous les types</option>
               {types?.map((t: any) => <option key={t.id} value={t.id}>{t.libelle}</option>)}
             </select>
-            <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none" title="Date debut" />
-            <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none" title="Date fin" />
+            <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} className="input" title="Date début" />
+            <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} className="input" title="Date fin" />
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+      {isLoading ? (
+        <SkeletonTable rows={5} cols={6} />
+      ) : (
+      <div className="card overflow-hidden" style={{ animation: 'slideUp 0.5s ease-out 0.2s backwards' }}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 font-medium text-gray-500">N Dossier</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Type</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Depot</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Limite</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Statut</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Montant</th>
+              <tr className="border-b border-surface-200/80">
+                <th className="text-left text-[11px] font-bold text-surface-400 uppercase tracking-widest py-4 px-6">N° Dossier</th>
+                <th className="text-left text-[11px] font-bold text-surface-400 uppercase tracking-widest py-4 px-6">Type</th>
+                <th className="text-left text-[11px] font-bold text-surface-400 uppercase tracking-widest py-4 px-6">Dépôt</th>
+                <th className="text-left text-[11px] font-bold text-surface-400 uppercase tracking-widest py-4 px-6">Limite</th>
+                <th className="text-left text-[11px] font-bold text-surface-400 uppercase tracking-widest py-4 px-6">Statut</th>
+                <th className="text-right text-[11px] font-bold text-surface-400 uppercase tracking-widest py-4 px-6">Montant</th>
               </tr>
             </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={6} className="py-8 text-center text-gray-400">Chargement...</td></tr>
-              ) : data?.items?.length === 0 ? (
-                <tr><td colSpan={6} className="py-8 text-center text-gray-400">Aucune reclamation</td></tr>
+            <tbody className="divide-y divide-surface-100">
+              {data?.items?.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center">
+                    <EmptyState
+                      title="Aucune réclamation"
+                      description="Aucun résultat ne correspond à vos critères de recherche"
+                    />
+                  </td>
+                </tr>
               ) : (
-                data?.items?.map((r: any) => (
-                  <tr key={r.id} onClick={() => navigate(`/reclamations/${r.id}`)} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer">
-                    <td className="py-3 px-4 font-mono text-xs">{r.numero_dossier}</td>
-                    <td className="py-3 px-4 text-xs">{r.type?.libelle || '-'}</td>
-                    <td className="py-3 px-4">{new Date(r.date_depot).toLocaleDateString('fr-FR')}</td>
-                    <td className="py-3 px-4">{r.date_limite_reponse ? new Date(r.date_limite_reponse).toLocaleDateString('fr-FR') : '-'}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUT_COLORS[r.statut] || 'bg-gray-100 text-gray-800'}`}>
-                        {STATUT_FR[r.statut] || r.statut}
+                data?.items?.map((r: any, i: number) => (
+                  <tr
+                    key={r.id}
+                    onClick={() => navigate(`/reclamations/${r.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        navigate(`/reclamations/${r.id}`)
+                      }
+                    }}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Ouvrir le dossier ${r.numero_dossier}`}
+                    className="group cursor-pointer transition-all duration-200 hover:bg-brand-50/40 focus-visible:bg-brand-50/40 focus-visible:outline-none"
+                    style={{ animation: 'fadeIn 0.4s ease-out backwards', animationDelay: `${0.3 + i * 0.03}s` }}
+                  >
+                    <td className="py-4 px-6">
+                      <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-brand-600 group-hover:text-brand-700 transition-colors">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {r.numero_dossier}
                       </span>
                     </td>
-                    <td className="py-3 px-4">{r.montant_concerne ? `${Number(r.montant_concerne).toLocaleString()} DA` : '-'}</td>
+                    <td className="py-4 px-6">
+                      <span className="text-xs font-medium text-surface-600">{r.type?.libelle || '—'}</span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className="text-sm text-surface-700 tabular-nums">{new Date(r.date_depot).toLocaleDateString('fr-FR')}</span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className={`text-sm tabular-nums ${r.date_limite_reponse ? 'text-surface-500' : 'text-surface-400'}`}>
+                        {r.date_limite_reponse ? new Date(r.date_limite_reponse).toLocaleDateString('fr-FR') : '—'}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6">
+                      <BadgeStatut statut={r.statut} />
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <span className="text-sm font-bold text-surface-800 tabular-nums">
+                        {r.montant_concerne ? `${Number(r.montant_concerne).toLocaleString()} Ar` : '—'}
+                      </span>
+                    </td>
                   </tr>
                 ))
               )}
@@ -186,22 +249,17 @@ export default function ListeReclamations() {
           </table>
         </div>
 
+        {/* Pagination */}
         {data && data.total > 15 && (
-          <div className="flex items-center justify-between p-4 border-t border-gray-200">
-            <span className="text-sm text-gray-500">
-              {data.total} resultats, page {page}/{totalPages}
-            </span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
-                <ChevronLeft size={16} />
-              </button>
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={data.total}
+            onChange={setPage}
+          />
         )}
       </div>
+      )}
     </div>
   )
 }

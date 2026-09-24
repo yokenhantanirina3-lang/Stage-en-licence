@@ -1,4 +1,4 @@
-# Plateforme de Gestion et de Suivi des Reclamations des Contribuables
+# Logiciel de gestion de la relation usager — suivi des réceptions et réclamations à l'accueil d'un centre fiscal
 
 ## Demarrage rapide
 

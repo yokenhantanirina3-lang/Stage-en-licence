@@ -1,4 +1,19 @@
-"""Fixtures de test : base isolee, client HTTP, utilisateurs de reference."""
+"""Fixtures de test : base isolee, client HTTP, utilisateurs de reference.
+
+Important : les tests s'executent sur une base dediee ``<base>_test`` et
+peuvent donc detruire/recréer l'ensemble de son schema sans risque pour la
+base de developpement.
+"""
+
+from urllib.parse import urlsplit, urlunsplit
+
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    # asyncpg + ProactorEventLoop ne sont pas fiables sous Windows
+    # (WinError 64 "nom réseau indisponible") : forcer SelectorEventLoop.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -13,10 +28,22 @@ from app.models.user import User, Role, RoleEnum
 from app.models.contribuable import Contribuable
 
 
+TEST_DATABASE_NAME = "fiscal_test"
+
+
+def _test_database_url(url: str) -> str:
+    """Force une base de test dediee (constante ``fiscal_test``) pour ne
+    jamais toucher a la base de developpement, quelle que soit son nom."""
+    parts = urlsplit(url)
+    return urlunsplit(
+        (parts.scheme, parts.netloc, f"/{TEST_DATABASE_NAME}", parts.query, parts.fragment)
+    )
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def db_env():
     """Engine + schema neufs pour chaque test (isolation totale)."""
-    engine = create_async_engine(str(settings.DATABASE_URL))
+    engine = create_async_engine(_test_database_url(str(settings.DATABASE_URL)))
     TestingSession = async_sessionmaker(
         bind=engine, class_=AsyncSession, expire_on_commit=False
     )

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import date
@@ -53,6 +54,75 @@ def _check_transition(decision: Decision, *statuts: StatutDecisionEnum) -> None:
             status_code=400,
             detail=f"Statut actuel {decision.statut.value}, transition autorisee seulement depuis : {labels}",
         )
+
+
+async def _envoyer_email_notification(
+    db: AsyncSession,
+    reclamation: Reclamation,
+    full,
+    decision_plein,
+) -> bool:
+    try:
+        from app.core.config import settings
+        from app.tasks import notifications as notifications_mod
+        from app.services import minio_service
+
+        if not settings.SMTP_HOST:
+            return False
+
+        contribuable = getattr(full, "contribuable", None) or getattr(
+            reclamation, "contribuable", None
+        )
+        email = getattr(contribuable, "email", None)
+        if not email:
+            return False
+
+        nom = (
+            getattr(contribuable, "nom_raison_sociale", None)
+            or ("{} {}".format(
+                getattr(contribuable, "prenom", "") or "",
+                getattr(contribuable, "nom", "") or "",
+            ).strip())
+        )
+
+        octets, nom_pdf = b"", ""
+        chemin = getattr(decision_plein, "chemin_pdf", None)
+        if chemin:
+            try:
+                octets = minio_service.download_bytes(chemin)
+                nom_pdf = f"decision_{reclamation.numero_dossier}.pdf"
+            except Exception:
+                octets = b""
+
+        corps = (
+            f"Bonjour {nom},\n\n"
+            f"Votre reclamation {reclamation.numero_dossier} a fait l'objet d'une decision "
+            f"notifiee le {date.today().strftime('%d/%m/%Y')}.\n"
+            "Vous la trouverez en piece jointe a ce message, ou vous pouvez en suivre "
+            "l'etat via le portail public du centre fiscal.\n\n"
+            "Cordialement,\nLe centre fiscal"
+        )
+        attachments = [(nom_pdf, octets, "application/pdf")] if octets else None
+
+        try:
+            notifications_mod.send_email.delay(
+                to=email,
+                subject=f"{settings.EMAIL_SUJET_PREFIXE} Decision - dossier {reclamation.numero_dossier}",
+                body=corps,
+                attachments=attachments,
+            )
+        except Exception as broker_error:
+            print(f"[WARN] Broker indisponible, envoi synchrone: {broker_error}")
+            await notifications_mod._envoyer_email_async(
+                to=email,
+                subject=f"{settings.EMAIL_SUJET_PREFIXE} Decision - dossier {reclamation.numero_dossier}",
+                body=corps,
+                attachments=attachments,
+            )
+        return True
+    except Exception as exc:
+        print(f"[WARN] Envoi de l'email de notification impossible: {exc}")
+        return False
 
 
 async def _log(
@@ -162,9 +232,36 @@ async def update_decision(
 
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(decision, field, value)
-
     await db.flush()
+
     return decision
+
+
+@router.get("/decisions/{decision_id}/pdf")
+async def telecharger_pdf_decision(
+    decision_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("ADMIN", "CHEF", "DIRECTEUR", "SAISIE")),
+):
+    decision = await _get_decision(db, decision_id)
+    if not decision.chemin_pdf:
+        raise HTTPException(status_code=404, detail="PDF de decision non genere")
+
+    from app.services import minio_service
+
+    chemin = decision.chemin_pdf
+    if chemin.startswith("local:"):
+        filename = chemin.split(":", 1)[1]
+        filepath = minio_service.get_local_file(filename)
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail="Fichier absent du disque")
+        return FileResponse(
+            path=str(filepath),
+            filename=f"decision_{decision_id}.pdf",
+            media_type="application/pdf",
+        )
+
+    return {"url": minio_service.presigned_download(chemin)}
 
 
 @router.post("/decisions/{decision_id}/soumettre", response_model=DecisionRead)
@@ -268,6 +365,33 @@ async def notifier_decision(
 
     await _log(db, reclamation, current_user.id, TypeActionEnum.ENVOI, "Decision notifiee au contribuable")
     await _log(db, reclamation, current_user.id, TypeActionEnum.CLOTURE, "Dossier cloture")
+
+    try:
+        from sqlalchemy.orm import selectinload
+        from app.services import pdf_service
+
+        full = (
+            await db.execute(
+                select(Reclamation)
+                .options(
+                    selectinload(Reclamation.contribuable),
+                    selectinload(Reclamation.decision),
+                )
+                .where(Reclamation.id == reclamation.id)
+            )
+        ).scalar_one()
+        decision_pdf = await db.execute(
+            select(Decision).options(selectinload(Decision.signataire)).where(Decision.id == decision_id)
+        )
+        decision_plein = decision_pdf.scalar_one()
+        decision_plein.chemin_pdf = pdf_service.generer_et_stocker_decision(full, decision_plein)
+    except Exception as exc:
+        print(f"[WARN] Generation du PDF de decision impossible: {exc}")
+
+    await _envoyer_email_notification(
+        db, reclamation, locals().get("full"), locals().get("decision_plein")
+    )
+
     await db.flush()
 
     return decision
