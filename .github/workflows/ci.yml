@@ -164,13 +164,13 @@ jobs:
         working-directory: frontend
         run: |
           set +e
-          npx playwright test --reporter=list > playwright-out.log 2>&1
+          npm run test:e2e -- --reporter=list > playwright-out.log 2>&1
           status=$?
           set -e
           cat playwright-out.log
           if [ $status -ne 0 ]; then
             echo "::error title=playwright failed::exit code $status"
-            grep -E '✘|✓|Error:|Timeout|expect\(|failed' playwright-out.log | head -n 20 | while IFS= read -r line; do
+            grep -E '✘|✓|Error|Timeout|expect|failed|passed' playwright-out.log | head -n 20 | while IFS= read -r line; do
               echo "::error::${line}"
             done
             {
