@@ -11,18 +11,18 @@ class UserBase(BaseModel):
     telephone: Optional[str] = None
     actif: bool = True
 
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6)
+    id_role: int = 6
+    id_service: Optional[int] = None
+
     @field_validator("nom", "telephone")
     @classmethod
     def _texte_sans_speciaux(cls, v):
         if v is None:
             return v
         return verifier_texte_sans_speciaux(v, "Le champ")
-
-
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=6)
-    id_role: int = 6
-    id_service: Optional[int] = None
 
 
 class UserUpdate(BaseModel):

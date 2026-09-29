@@ -17,7 +17,7 @@ def generer_numero_fiscal(annee: int, index: int) -> str:
 @router.get("/", response_model=list[ContribuableRead])
 async def list_contribuables(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=1000),
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN", "SAISIE", "INSTRUCTEUR", "CHEF", "DIRECTEUR")),

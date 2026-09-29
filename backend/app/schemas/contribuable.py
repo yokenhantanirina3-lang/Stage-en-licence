@@ -13,6 +13,10 @@ class ContribuableBase(BaseModel):
     email: Optional[EmailStr] = None
     telephone: Optional[str] = None
 
+
+class ContribuableCreate(ContribuableBase):
+    id_user: Optional[int] = None
+
     @field_validator("nom_raison_sociale", "adresse", "numero_fiscal", "telephone")
     @classmethod
     def _texte_sans_speciaux(cls, v):
@@ -26,10 +30,6 @@ class ContribuableBase(BaseModel):
         if v and not str(v).replace("+", "").replace("-", "").replace(" ", "").isdigit():
             raise ValueError("Le telephone doit etre compose de chiffres (+, - et espaces autorises).")
         return v
-
-
-class ContribuableCreate(ContribuableBase):
-    id_user: Optional[int] = None
 
 
 class ContribuableUpdate(BaseModel):
