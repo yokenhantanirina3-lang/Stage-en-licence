@@ -11,6 +11,10 @@ backend/.pytest_cache/
 node_modules/
 frontend/dist/
 frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.playwright/
 
 # Environment & secrets
 .env

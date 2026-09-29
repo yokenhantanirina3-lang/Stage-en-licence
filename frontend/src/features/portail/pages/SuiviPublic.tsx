@@ -54,7 +54,12 @@ export default function SuiviPublic() {
       })
       setResult(res.data)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Dossier introuvable. Veuillez verifier votre code de suivi.')
+      const status = err?.response?.status
+      setError(
+        status === 404 || !err?.response
+          ? 'Dossier introuvable. Veuillez verifier votre code de suivi.'
+          : err?.response?.data?.detail || 'Une erreur est survenue. Veuillez reessayer plus tard.',
+      )
     } finally {
       setLoading(false)
     }
