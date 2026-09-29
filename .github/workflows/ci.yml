@@ -141,6 +141,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Run database migrations
+        working-directory: backend
+        run: alembic upgrade head
+
       - name: Seed database
         working-directory: backend
         run: python -m app.seed && python -m app.seed_demo
