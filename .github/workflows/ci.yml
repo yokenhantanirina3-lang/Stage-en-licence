@@ -162,4 +162,22 @@ jobs:
 
       - name: Run Playwright e2e
         working-directory: frontend
-        run: npx playwright test
+        run: |
+          set +e
+          npx playwright test --reporter=list > playwright-out.log 2>&1
+          status=$?
+          set -e
+          cat playwright-out.log
+          if [ $status -ne 0 ]; then
+            echo "::error title=playwright failed::exit code $status"
+            grep -E '✘|✓|Error:|Timeout|expect\(|failed' playwright-out.log | head -n 20 | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+            {
+              echo ''
+              echo '```'
+              tail -n 60 playwright-out.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $status
