@@ -85,6 +85,7 @@ async def list_reclamations(
         filtre = or_(
             Reclamation.numero_dossier.ilike(f"%{search}%"),
             Reclamation.reference_imposition.ilike(f"%{search}%"),
+            Reclamation.code_suivi.ilike(f"%{search}%"),
             Reclamation.contribuable.has(
                 or_(
                     Contribuable.numero_fiscal.ilike(f"%{search}%"),
